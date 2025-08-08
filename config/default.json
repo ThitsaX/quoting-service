@@ -112,13 +112,13 @@
             "options": {
               "mode": 2,
               "batchSize": 50,
-              "pollFrequency": 1,
+              "pollFrequency": 5,
               "recursiveTimeout": 20,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": false,
               "syncConcurrency": 50,
-              "consumeTimeout": 1
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "quotes-handler-post_c",
@@ -138,13 +138,13 @@
             "options": {
               "mode": 2,
               "batchSize": 50,
-              "pollFrequency": 1,
+              "pollFrequency": 5,
               "recursiveTimeout": 20,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": false,
               "syncConcurrency": 50,
-              "consumeTimeout": 1
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "quotes-handler-put_c",
@@ -164,13 +164,13 @@
             "options": {
               "mode": 2,
               "batchSize": 50,
-              "pollFrequency": 1,
+              "pollFrequency": 5,
               "recursiveTimeout": 20,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": false,
               "syncConcurrency": 50,
-              "consumeTimeout": 1
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "quotes-handler-get_c",
