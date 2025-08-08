@@ -41,13 +41,67 @@ const axios = require('axios')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const { Enum, Util } = require('@mojaloop/central-services-shared')
 const { AuditEventAction } = require('@mojaloop/event-sdk')
+const CacheableLookup = require('cacheable-lookup').default
 
 const { RESOURCES, HEADERS, ISO_HEADER_PART } = require('../constants')
 const { logger } = require('../lib')
 const Config = require('./config')
+const http = require('node:http')
+const https = require('node:https')
 
 const rethrow = require('@mojaloop/central-services-shared').Util.rethrow.with('QS')
 const config = new Config()
+
+
+// Create DNS cache with aggressive caching for performance
+const dnsCache = new CacheableLookup({
+  maxTtl: 300,      // Cache for 5 minutes
+  errorTtl: 5,      // Cache errors briefly
+  cache: new Map()
+});
+
+// Optimized HTTP Agent
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  maxSockets: 50,           // Reduce if not needed
+  maxFreeSockets: 10,
+  timeout: 0,
+  freeSocketTimeout: 30000, // Reduce free socket timeout
+  keepAliveMsecs: 1000
+});
+
+// Optimized HTTPS Agent
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 0,
+  freeSocketTimeout: 30000,
+  keepAliveMsecs: 1000
+});
+
+// Install DNS cache on both agents
+dnsCache.install(httpAgent);
+dnsCache.install(httpsAgent);
+
+// Set as defaults
+axios.defaults.httpAgent = httpAgent;
+axios.defaults.httpsAgent = httpsAgent;
+axios.defaults.httpAgent.toJSON = () => ({});
+axios.defaults.httpsAgent.toJSON = () => ({});
+
+axios.defaults.proxy = false;
+axios.defaults.timeout = 10000;    // Increase timeout slightly
+axios.defaults.maxBodyLength = 50 * 1024 * 1024;
+axios.defaults.maxContentLength = 50 * 1024 * 1024;
+axios.defaults.headers.common = {};
+
+const axiosInstance = axios.create({
+  httpAgent: httpAgent,
+  httpsAgent: httpsAgent,
+  // Add these for better performance
+  validateStatus: (status) => status < 500, // Don't retry on 4xx errors
+});
 
 const failActionHandler = async (request, h, err) => {
   logger.error('validation failure: ', err)
@@ -235,21 +289,27 @@ const proxyAdjacentParticipantDto = (name) => ({
 
 // Add caching to the participant endpoint
 const fetchParticipantInfo = async (source, destination, cache, proxyClient) => {
+  const __startAll = Date.now()
   // Get quote participants from central ledger admin
   const { switchEndpoint } = config
   const url = `${switchEndpoint}/participants`
   let requestPayer
   let requestPayee
 
+  // Proxy lookups (if configured)
   if (proxyClient) {
+    const __tProxyStart = Date.now()
     if (!proxyClient.isConnected) await proxyClient.connect()
     const proxyIdSource = await proxyClient.lookupProxyByDfspId(source)
     const proxyIdDestination = await proxyClient.lookupProxyByDfspId(destination)
+    logger.info(`[perf] fetchParticipantInfo: proxy lookups took ${Date.now() - __tProxyStart}ms`, { source, destination, proxyIdSource: !!proxyIdSource, proxyIdDestination: !!proxyIdDestination })
 
     if (!proxyIdSource) {
       const selfHealSourceProxy = config.proxyMap[source]
       if (selfHealSourceProxy) {
+        const __tAddMap = Date.now()
         await proxyClient.addDfspIdToProxyMapping(source, selfHealSourceProxy)
+        logger.info(`[perf] fetchParticipantInfo: addDfspIdToProxyMapping(source) took ${Date.now() - __tAddMap}ms`, { source })
         requestPayer = proxyAdjacentParticipantDto(source)
       }
     } else {
@@ -260,7 +320,9 @@ const fetchParticipantInfo = async (source, destination, cache, proxyClient) => 
     if (!proxyIdDestination) {
       const selfHealDestinationProxy = config.proxyMap[destination]
       if (selfHealDestinationProxy) {
+        const __tAddMap = Date.now()
         await proxyClient.addDfspIdToProxyMapping(destination, selfHealDestinationProxy)
+        logger.info(`[perf] fetchParticipantInfo: addDfspIdToProxyMapping(destination) took ${Date.now() - __tAddMap}ms`, { destination })
         requestPayee = proxyAdjacentParticipantDto(destination)
       }
     } else {
@@ -274,33 +336,39 @@ const fetchParticipantInfo = async (source, destination, cache, proxyClient) => 
   const cachedPayee = cache && !requestPayee && cache.get(`fetchParticipantInfo_${destination}`)
 
   if (!cachedPayer && !requestPayer) {
-    requestPayer = await axios.request({ url: `${url}/${source}` })
+    const __tHttpPayer = Date.now()
+    requestPayer = await axiosInstance.request({ url: `${url}/${source}` })
+    logger.info(`[perf] fetchParticipantInfo: payer GET ${url}/${source} took ${Date.now() - __tHttpPayer}ms`)
     cache && cache.put(`fetchParticipantInfo_${source}`, requestPayer, Config.participantDataCacheExpiresInMs)
     logger.isDebugEnabled && logger.debug(`[fetchParticipantInfo]: cache miss for payer ${source}`)
   } else {
     logger.isDebugEnabled && logger.debug(`[fetchParticipantInfo]: cache hit for payer ${source}`)
   }
   if (!cachedPayee && !requestPayee) {
-    requestPayee = await axios.request({ url: `${url}/${destination}` })
+    const __tHttpPayee = Date.now()
+    requestPayee = await axiosInstance.request({ url: `${url}/${destination}` })
+    logger.info(`[perf] fetchParticipantInfo: payee GET ${url}/${destination} took ${Date.now() - __tHttpPayee}ms`)
     cache && cache.put(`fetchParticipantInfo_${destination}`, requestPayee, Config.participantDataCacheExpiresInMs)
     logger.isDebugEnabled && logger.debug(`[fetchParticipantInfo]: cache miss for payee ${destination}`)
   } else {
     logger.isDebugEnabled && logger.debug(`[fetchParticipantInfo]: cache hit for payee ${destination}`)
   }
 
+  const totalMs = Date.now() - __startAll
+  logger.info(`[perf] fetchParticipantInfo: total took ${totalMs}ms`, { source, destination, usedCachePayer: !!cachedPayer, usedCachePayee: !!cachedPayee })
+
   const payer = cachedPayer || requestPayer.data
   const payee = cachedPayee || requestPayee.data
   return { payer, payee }
 }
 
-const getParticipantEndpoint = async ({ fspId, db, loggerFn, endpointType, proxyClient = null }) => {
-  if (!fspId || !db || !loggerFn || !endpointType) {
+const getParticipantEndpoint = async ({ fspId, endpointType, db, log = logger, proxyClient = null }) => {
+  if (!fspId || !db || !endpointType) {
     throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR, 'Missing required arguments for \'getParticipantEndpoint\'')
   }
 
   let endpoint = await db.getParticipantEndpoint(fspId, endpointType)
-
-  loggerFn(`DB lookup: resolved participant '${fspId}' ${endpointType} endpoint to: '${endpoint}'`)
+  log.debug(`DB lookup: resolved participant '${fspId}' ${endpointType} endpoint to: '${endpoint}'`)
 
   // if endpoint is not found in db, check the proxy cache for a proxy representative for the fsp (this might be an inter-scheme request)
   if (!endpoint && proxyClient) {
@@ -310,7 +378,7 @@ const getParticipantEndpoint = async ({ fspId, db, loggerFn, endpointType, proxy
       endpoint = await db.getParticipantEndpoint(proxyId, endpointType)
     }
 
-    loggerFn(`Proxy lookup: resolved participant '${fspId}' ${endpointType} endpoint to: '${endpoint}', proxyId: ${proxyId} `)
+    log.debug(`Proxy lookup: resolved participant '${fspId}' ${endpointType} endpoint to: '${endpoint}', proxyId: ${proxyId} `)
   }
 
   return endpoint
