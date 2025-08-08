@@ -3,7 +3,7 @@
     "ID": 1,
     "NAME": "Hub"
   },
-  "HOSTNAME": "http://localhost",
+  "HOSTNAME": "http://quoting-service",
   "LISTEN_ADDRESS": "0.0.0.0",
   "API_TYPE": "fspiop",
   "PORT": 3002,
@@ -88,7 +88,7 @@
     "type": "redis-cluster",
     "proxyConfig": {
       "cluster": [
-        { "host": "localhost", "port": 6000 }
+        { "host": "localhost", "port": 6379 }
       ]
     }
   },
@@ -98,7 +98,7 @@
     "type": "redis-cluster",
     "connectionConfig": {
       "cluster": [
-        { "host": "127.0.0.1", "port": 6000 }
+        { "host": "127.0.0.1", "port": 6379 }
       ]
     }
   },
