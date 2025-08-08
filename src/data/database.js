@@ -500,7 +500,11 @@ class Database {
         fspId: party.partyIdInfo.fspId,
         participantId: refs.participantId,
         merchantClassificationCode: party.merchantClassificationCode,
-        partyName: party.partyName,
+        partyName: party.partyName || party.name || 
+          (party.personalInfo?.complexName ? 
+            [party.personalInfo.complexName.firstName, 
+             party.personalInfo.complexName.middleName, 
+             party.personalInfo.complexName.lastName].filter(Boolean).join(' ') : null),
         transferParticipantRoleTypeId: refs.transferParticipantRoleTypeId,
         ledgerEntryTypeId: refs.ledgerEntryTypeId,
         amount: new MLNumber(amount).toFixed(this.config.amount.scale),
