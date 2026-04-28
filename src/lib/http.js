@@ -22,7 +22,7 @@
  * Mojaloop Foundation
  - Name Surname <name.surname@mojaloop.io>
 
-  Initial contribution
+ Initial contribution
  --------------------
  The initial functionality and code base was donated by the Mowali project working in conjunction with MTN and Orange as service provides.
  * Project: Mowali
@@ -34,19 +34,94 @@
  - Vassilis Barzokas <vassilis.barzokas@modusbox.com>
  --------------
  ******/
-
 const http = require('node:http')
+const https = require('node:https')
 const util = require('node:util')
 const axios = require('axios')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
+const CacheableLookup = require('cacheable-lookup').default
 
 const { logger } = require('../lib')
 const Config = require('./config')
 
-axios.defaults.httpAgent = new http.Agent({ keepAlive: true })
-axios.defaults.httpAgent.toJSON = () => ({})
-axios.defaults.headers.common = {}
 const config = new Config()
+// Create DNS cache with aggressive caching for performance
+const dnsCache = new CacheableLookup({
+  maxTtl: 3600, // Cache for 5 minutes
+  errorTtl: 5, // Cache errors briefly
+  cache: new Map()
+})
+
+// Optimized HTTP Agent
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  maxSockets: 50, // Reduce if not needed
+  maxFreeSockets: 10,
+  timeout: 0,
+  freeSocketTimeout: 30000, // Reduce free socket timeout
+  keepAliveMsecs: 1000
+})
+
+// Optimized HTTPS Agent
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 0,
+  freeSocketTimeout: 30000,
+  keepAliveMsecs: 1000
+})
+
+// Install DNS cache on both agents
+dnsCache.install(httpAgent)
+dnsCache.install(httpsAgent)
+
+// Set as defaults
+axios.defaults.httpAgent = httpAgent
+axios.defaults.httpsAgent = httpsAgent
+axios.defaults.httpAgent.toJSON = () => ({})
+axios.defaults.httpsAgent.toJSON = () => ({})
+
+axios.defaults.proxy = false
+axios.defaults.timeout = 10000 // Increase timeout slightly
+axios.defaults.maxBodyLength = 50 * 1024 * 1024
+axios.defaults.maxContentLength = 50 * 1024 * 1024
+axios.defaults.headers.common = {}
+
+const axiosInstance = axios.create({
+  httpAgent: httpAgent,
+  httpsAgent: httpsAgent,
+  // Add these for better performance
+  validateStatus: (status) => status < 500 // Don't retry on 4xx errors
+})
+
+axiosInstance.interceptors.request.use(cfg => {
+  cfg.metadata = { start: process.hrtime.bigint() }
+  return cfg
+})
+
+axiosInstance.interceptors.response.use(res => {
+  const end = process.hrtime.bigint()
+  const ms = Number(end - res.config.metadata.start) / 1e6
+  const sock = res.request?.socket
+  const reused = res.request?.reusedSocket
+
+  // Log performance metrics with more detail
+  logger.info(`perf axios ${ms.toFixed(1)}ms reused=${reused} remote=${sock?.remoteAddress}:${sock?.remotePort} url=${res.config.url}`)
+
+  // Warn if request is slow despite connection reuse
+  if (ms > 1000 && reused) {
+    logger.warn(`Slow request despite connection reuse: ${ms.toFixed(1)}ms for ${res.config.url}`)
+  }
+
+  return res
+}, err => {
+  if (err.request) {
+    const reused = err.request.reusedSocket
+    logger.warn(`axios error reused=${reused} code=${err.code} url=${err.config?.url}`)
+  }
+  throw err
+})
 
 /**
  * Encapsulates making an HTTP request and translating any error response into a domain-specific
@@ -62,7 +137,7 @@ async function httpRequest (opts, fspiopSource) {
   let res
   let body
   try {
-    res = await httpRequestBase(opts)
+    res = await httpRequestBase(opts, axiosInstance)
     body = await res.data
     log.verbose('httpRequest is finished', { body, opts })
   } catch (e) {
@@ -93,8 +168,8 @@ async function httpRequest (opts, fspiopSource) {
   return body
 }
 
-async function httpRequestBase (opts, axiosInstance = axios) {
-  return axiosInstance.request({
+async function httpRequestBase (opts, axiosInst = axiosInstance) {
+  return axiosInst.request({
     timeout: config.httpRequestTimeoutMs,
     ...opts
   })

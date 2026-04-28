@@ -82,7 +82,7 @@
   },
   "CACHE": {
     "ENUM_DATA_EXPIRES_IN_MS": 4170000,
-    "PARTICIPANT_DATA_EXPIRES_IN_MS": 60000
+    "PARTICIPANT_DATA_EXPIRES_IN_MS": 6000000
   },
   "PROXY_MAP": {},
   "PROXY_CACHE": {
@@ -113,13 +113,14 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
-              "pollFrequency": 10,
-              "recursiveTimeout": 100,
+              "batchSize": 50,
+              "pollFrequency": 5,
+              "recursiveTimeout": 20,
               "messageCharset": "utf8",
               "messageAsJSON": true,
-              "sync": true,
-              "consumeTimeout": 1000
+              "sync": false,
+              "syncConcurrency": 50,
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "quotes-handler-post_c",
@@ -138,13 +139,14 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
-              "pollFrequency": 10,
-              "recursiveTimeout": 100,
+              "batchSize": 50,
+              "pollFrequency": 5,
+              "recursiveTimeout": 20,
               "messageCharset": "utf8",
               "messageAsJSON": true,
-              "sync": true,
-              "consumeTimeout": 1000
+              "sync": false,
+              "syncConcurrency": 50,
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "quotes-handler-put_c",
@@ -163,13 +165,14 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
-              "pollFrequency": 10,
-              "recursiveTimeout": 100,
+              "batchSize": 50,
+              "pollFrequency": 5,
+              "recursiveTimeout": 20,
               "messageCharset": "utf8",
               "messageAsJSON": true,
-              "sync": true,
-              "consumeTimeout": 1000
+              "sync": false,
+              "syncConcurrency": 50,
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "quotes-handler-get_c",
@@ -353,10 +356,12 @@
               "event_cb": true,
               "dr_cb": true,
               "socket.keepalive.enable": true,
-              "queue.buffering.max.messages": 10000000
+              "queue.buffering.max.messages": 100000,
+              "batch.num.messages": 1000,
+              "linger.ms": 5
             },
             "topicConf": {
-              "request.required.acks": "all",
+              "request.required.acks": "1",
               "partitioner": "murmur2_random"
             }
           }
@@ -373,10 +378,12 @@
               "event_cb": true,
               "dr_cb": true,
               "socket.keepalive.enable": true,
-              "queue.buffering.max.messages": 10000000
+              "queue.buffering.max.messages": 100000,
+              "batch.num.messages": 1000,
+              "linger.ms": 5
             },
             "topicConf": {
-              "request.required.acks": "all",
+              "request.required.acks": "1",
               "partitioner": "murmur2_random"
             }
           }
@@ -393,10 +400,12 @@
               "event_cb": true,
               "dr_cb": true,
               "socket.keepalive.enable": true,
-              "queue.buffering.max.messages": 10000000
+              "queue.buffering.max.messages": 100000,
+              "batch.num.messages": 1000,
+              "linger.ms": 5
             },
             "topicConf": {
-              "request.required.acks": "all",
+              "request.required.acks": "1",
               "partitioner": "murmur2_random"
             }
           }

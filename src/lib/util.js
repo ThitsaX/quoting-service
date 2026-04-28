@@ -239,6 +239,7 @@ const fetchParticipantInfo = async (source, destination, cache, proxyClient) => 
   let requestPayer
   let requestPayee
 
+  // Proxy lookups (if configured)
   if (proxyClient) {
     if (!proxyClient.isConnected) await proxyClient.connect()
     const [proxyIdSource, proxyIdDestination] = await Promise.all([
@@ -249,7 +250,9 @@ const fetchParticipantInfo = async (source, destination, cache, proxyClient) => 
     if (!proxyIdSource) {
       const selfHealSourceProxy = config.proxyMap[source]
       if (selfHealSourceProxy) {
+        const __tAddMap = Date.now()
         await proxyClient.addDfspIdToProxyMapping(source, selfHealSourceProxy)
+        logger.info(`[perf] fetchParticipantInfo: addDfspIdToProxyMapping(source) took ${Date.now() - __tAddMap}ms`, { source })
         requestPayer = proxyAdjacentParticipantDto(source)
       }
     } else {
@@ -261,7 +264,9 @@ const fetchParticipantInfo = async (source, destination, cache, proxyClient) => 
     if (!proxyIdDestination) {
       const selfHealDestinationProxy = config.proxyMap[destination]
       if (selfHealDestinationProxy) {
+        const __tAddMap = Date.now()
         await proxyClient.addDfspIdToProxyMapping(destination, selfHealDestinationProxy)
+        logger.info(`[perf] fetchParticipantInfo: addDfspIdToProxyMapping(destination) took ${Date.now() - __tAddMap}ms`, { destination })
         requestPayee = proxyAdjacentParticipantDto(destination)
       }
     } else {
